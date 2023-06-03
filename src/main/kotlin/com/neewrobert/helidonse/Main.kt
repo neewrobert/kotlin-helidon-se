@@ -1,86 +1,47 @@
-package com.neewrobert.helidonse;
+package com.neewrobert.helidonse
 
-
-import io.helidon.media.jackson.JacksonSupport;
-import io.helidon.integrations.micrometer.MicrometerSupport;
-import io.helidon.metrics.MetricsSupport;
-import io.helidon.common.LogConfig;
-import io.helidon.common.reactive.Single;
-import io.helidon.config.Config;
-import io.helidon.webserver.Routing;
-import io.helidon.webserver.WebServer;
-
-
+import io.helidon.common.LogConfig
+import io.helidon.config.Config
+import io.helidon.media.jackson.JacksonSupport
+import io.helidon.webserver.Routing
+import io.helidon.webserver.WebServer
+import java.util.concurrent.CompletionStage
 
 /**
  * The application main class.
  */
-public final class Main {
+object Main {
 
-    /**
-     * Cannot be instantiated.
-     */
-    private Main() {
+    @JvmStatic
+    fun main(args: Array<String>) {
+        startServer()
     }
 
-    /**
-     * Application main entry point.
-     * @param args command line arguments.
-     */
-    public static void main(final String[] args) {
-        startServer();
+    fun startServer(): CompletionStage<WebServer?> {
+        LogConfig.configureRuntime()
+        val config = Config.create()
+        val webServer = WebServer.builder(createRouting(config))
+            .config(config["server"])
+            .addMediaSupport(JacksonSupport.create())
+            .build()
+
+        return webServer.start()
+            .thenApply { ws: WebServer ->
+                println("WEB server is up! http://localhost:" + ws.port())
+                ws.whenShutdown().thenRun { println("WEB server is DOWN. Good bye!") }
+                ws
+            }.exceptionally { t: Throwable ->
+                System.err.println("Startup failed: " + t.message)
+                t.printStackTrace(System.err)
+                null
+            }
+
     }
 
-    /**
-     * Start the server.
-     * @return the created {@link WebServer} instance
-     */
-    static Single<WebServer> startServer() {
-
-        // load logging configuration
-        LogConfig.configureRuntime();
-
-        // By default this will pick up application.yaml from the classpath
-        Config config = Config.create();
-
-        WebServer server = WebServer.builder(createRouting(config))
-                .config(config.get("server"))
-                .addMediaSupport(JacksonSupport.create())
-                .build();
-
-        Single<WebServer> webserver = server.start();
-
-        // Try to start the server. If successful, print some info and arrange to
-        // print a message at shutdown. If unsuccessful, print the exception.
-        webserver.forSingle(ws -> {
-            System.out.println("WEB server is up! http://localhost:" + ws.port() + "/simple-greet");
-            ws.whenShutdown().thenRun(() -> System.out.println("WEB server is DOWN. Good bye!"));
-        })
-        .exceptionallyAccept(t -> {
-            System.err.println("Startup failed: " + t.getMessage());
-            t.printStackTrace(System.err);
-        });
-
-        return webserver;
-    }
-
-    /**
-     * Creates new {@link Routing}.
-     *
-     * @return routing configured with JSON support, a health check, and a service
-     * @param config configuration of this server
-     */
-    private static Routing createRouting(Config config) {
-        MicrometerSupport micrometerSupport = MicrometerSupport.create();
-        SimpleGreetService simpleGreetService = new SimpleGreetService(config);
-
-        Routing.Builder builder = Routing.builder()
-                .register(micrometerSupport)
-                .register("/micrometer-greet", new SimpleGreetService(config, micrometerSupport.registry()))
-                .register(MetricsSupport.create()) // Metrics at "/metrics"
-                .register("/simple-greet", simpleGreetService); 
-
-
-        return builder.build();
+    private fun createRouting(config: Config): Routing {
+        val primeNumberService = PrimeNumberService(config)
+        val builder = Routing.builder()
+            .register("/prime-numbers", primeNumberService)
+        return builder.build()
     }
 }
