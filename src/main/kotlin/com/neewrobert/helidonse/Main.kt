@@ -17,7 +17,7 @@ object Main {
         startServer()
     }
 
-    fun startServer(): CompletionStage<WebServer?> {
+    private fun startServer(): CompletionStage<WebServer?> {
         LogConfig.configureRuntime()
         val config = Config.create()
         val webServer = WebServer.builder(createRouting(config))
